@@ -1,1 +1,1 @@
-web: gunicorn "run:create_app()" --bind 0.0.0.0:$PORT
+web: gunicorn "run:create_app()" -k gevent --bind 0.0.0.0:$PORT --timeout 120
