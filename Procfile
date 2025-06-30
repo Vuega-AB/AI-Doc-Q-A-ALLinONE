@@ -1,1 +1,1 @@
-web: gunicorn "run:create_app()" -k gevent --bind 0.0.0.0:$PORT --timeout 120
+web: gunicorn "run:create_app()" -c gunicorn.conf.py -k gevent --bind 0.0.0.0:$PORT --timeout 120
