@@ -31,6 +31,22 @@ from backend import (
 
 )
 
+mail = Mail()
+ts = None # This will be created inside the factory with the app's secret key.
+
+### Define constants and helper functions globally so they are accessible everywhere.
+APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "saragaballa2002@gmail.com")
+MAX_EMAIL_RETRIES = 3
+EMAIL_RETRY_DELAY_SECONDS = 5
+
+def get_name_initials(name_str):
+    if not name_str or not isinstance(name_str, str): return "N/A"
+    parts = name_str.split(); return (parts[0][0] + parts[-1][0]).upper() if len(parts) > 1 else (parts[0][:2].upper() if parts else "N/A")
+
+def format_datetime_for_display(dt_obj):
+    if isinstance(dt_obj, datetime): return dt_obj.strftime("%b %d, %Y, %I:%M %p")
+    return "N/A" if dt_obj is None else str(dt_obj)
+
 def create_flask_app():
 
 
@@ -48,7 +64,7 @@ def create_flask_app():
 
 
     app = Flask(__name__, template_folder="templates")
-    app.secret_key = FLASK_SECRET_KEY
+    app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_default_key")
 
     # Flask-Mail Configuration
     app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.googlemail.com')
@@ -60,22 +76,10 @@ def create_flask_app():
     app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
     app.config['MAIL_MAX_EMAILS'] = None # Default, can be set to limit mails per connection
 
-    mail = Mail(app)
+    mail.init_app(app)
     # itsdangerous Serializer for tokens. Uses app.secret_key.
+    global ts
     ts = URLSafeTimedSerializer(app.secret_key)
-
-
-    FLASK_APP_INITIALIZED = False
-    def run_flask_app_initializations():
-        global FLASK_APP_INITIALIZED
-        if not FLASK_APP_INITIALIZED:
-            print("Running initializations for Flask App process...")
-            initialize_all_components(default_db="MongoDB")
-            FLASK_APP_INITIALIZED = True
-        else:
-            print("Flask App initializations already run.")
-
-    run_flask_app_initializations()
 
     # main_flask_app.py
 
@@ -130,23 +134,7 @@ def create_flask_app():
             return f(*args, **kwargs)
         return decorated_function
 
-    # --- Helper Functions ---
-    def get_name_initials(name_str):
-        if not name_str or not isinstance(name_str, str):
-            return "N/A"
-        parts = name_str.split()
-        if len(parts) > 1:
-            return (parts[0][0] + parts[-1][0]).upper()
-        elif parts:
-            return parts[0][:2].upper()
-        return "N/A"
 
-    def format_datetime_for_display(dt_obj):
-        if isinstance(dt_obj, datetime):
-            return dt_obj.strftime("%b %d, %Y, %I:%M %p")
-        elif dt_obj is None:
-            return "N/A"
-        return str(dt_obj)
 
     def send_system_email(to_email, subject, template_name_no_ext, **kwargs):
         """Helper to send emails using HTML and TXT templates."""
