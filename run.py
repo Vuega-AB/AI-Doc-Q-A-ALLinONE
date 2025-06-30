@@ -1,6 +1,6 @@
-import gradio as gr
 from starlette.applications import Starlette
 from a2wsgi import ASGIMiddleware
+import gradio as gr
 
 # Import the FACTORY functions
 from main_flask_app import create_flask_app
@@ -8,30 +8,28 @@ from gradio_server import create_gradio_demo
 
 def create_app():
     """
-    This factory creates the final combined ASGI application that Uvicorn can run.
-    It builds a base Starlette app for Flask, then mounts Gradio onto it.
+    This factory creates the final combined ASGI application using a master
+    Starlette router to host both Flask and Gradio on different paths.
     """
-    print("--- Running Final App Factory for Uvicorn/Starlette ---")
+    print("--- Running Final App Factory with Master Starlette Router ---")
     
-    # 1. Create the pure Flask (WSGI) app instance.
+    # 1. Create the underlying app instances
     flask_app = create_flask_app()
-
-    # 2. Create the Gradio UI Blocks instance.
     gradio_demo = create_gradio_demo()
     
-    # 3. Create a clean Starlette application that will host our Flask app.
-    #    This is the base that Gradio will mount onto.
-    flask_host_app = Starlette()
-    flask_host_app.mount("/", ASGIMiddleware(flask_app))
+    # 2. Convert the Flask WSGI app into an ASGI app
+    flask_asgi = ASGIMiddleware(flask_app)
 
-    # 4. Now, use Gradio's official mounting function.
-    #    We give it our `flask_host_app` (which is a pure Starlette ASGI app)
-    #    as the application to mount ONTO. Gradio's function knows how to handle
-    #    a Starlette app perfectly.
-    final_combined_app = gr.mount_gradio_app(
-        app=flask_host_app,
-        blocks=gradio_demo,
-        path="/gradio"
-    )
+    # 3. Create the raw ASGI app from the Gradio Blocks
+    gradio_asgi = gr.routes.App.create_app(gradio_demo)
+
+    # 4. Create the master router application
+    master_app = Starlette(routes=[
+        # A request to "/gradio" or "/gradio/..." will be handled by the Gradio app
+        gr.routing.Mount("/gradio", app=gradio_asgi, name="gradio_app"),
+        
+        # Any other request will fall through and be handled by the Flask app
+        gr.routing.Mount("/", app=flask_asgi, name="flask_app"),
+    ])
     
-    return final_combined_app
+    return master_app
