@@ -1,13 +1,16 @@
 # Gunicorn configuration file
 
-# This function will be called in each worker process after it's forked.
-def post_fork(server, worker):
-    # This is the crucial part:
-    # It patches the standard libraries to be gevent-friendly.
-    # This must happen before our app, which imports things like 'requests'
-    # and 'threading', is loaded.
-    from gevent import monkey
-    monkey.patch_all()
+# This code now runs in the master process *before* forking,
+# because we will use the --preload flag.
+print("--- Gunicorn config loaded. Applying gevent monkey-patch early. ---")
 
-    # Log that the patching has occurred for this worker.
-    worker.log.info("Made gevent monkey-patch for worker %s" % worker.pid)
+try:
+    from gevent import monkey
+    # We patch everything except 'os' to avoid a known issue with subprocesses.
+    monkey.patch_all(os=False) 
+    print("--- Gevent monkey-patch applied successfully. ---")
+except ImportError:
+    print("--- Gevent not found, skipping monkey-patch. ---")
+
+# We no longer need the post_fork hook.
+# The preload flag handles this for us.
