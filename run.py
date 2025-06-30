@@ -1,7 +1,7 @@
 import gradio as gr
 from a2wsgi import ASGIMiddleware
 
-# Import the FACTORY functions
+# Import the FACTORY functions at the top
 from main_flask_app import create_flask_app
 from gradio_server import create_gradio_demo
 
@@ -13,27 +13,35 @@ def create_app():
     """
     print("--- Running Top-Level App Factory ---")
     
-    # 1. Create the Flask app instance (this also handles DB init)
     flask_app = create_flask_app()
-    
-    # 2. Create the Gradio demo instance
     gradio_demo = create_gradio_demo()
     
-    # 3. THIS IS THE KEY CHANGE:
-    # Instead of gr.mount_gradio_app, we create the Gradio ASGI app first.
+    # Create the raw ASGI app from Gradio
     gradio_asgi_app = gr.routes.App.create_app(gradio_demo)
-    
-    # 4. Then, we mount the Gradio ASGI app as a middleware onto a specific path
-    #    of our main Flask (WSGI) app.
-    #    The ASGIMiddleware handles the conversion between the two protocols.
-    flask_app.wsgi_app = ASGIMiddleware(
-        gradio_asgi_app,
-        mount_path="/gradio",
-        app=flask_app.wsgi_app
-    )
-    
-    # 5. Return the *original* Flask app. It has now been modified
-    #    to internally handle the /gradio path.
-    return flask_app
 
-# The Procfile command "gunicorn 'run:create_app()'" remains the same.
+    # This is the new, more compatible way to mount.
+    class PathDispatcher:
+        def __init__(self, default_app, mount_app, mount_path):
+            self.default_app = default_app
+            self.mount_app = mount_app
+            self.mount_path = mount_path
+
+        def __call__(self, environ, start_response):
+            if environ['PATH_INFO'].startswith(self.mount_path):
+                # Manually adjust the path for the mounted app
+                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.mount_path):]
+                environ['SCRIPT_NAME'] = self.mount_path
+                return self.mount_app(environ, start_response)
+            else:
+                return self.default_app(environ, start_response)
+
+    # Wrap the Gradio ASGI app so it behaves like a WSGI app
+    gradio_wsgi_wrapper = ASGIMiddleware(gradio_asgi_app)
+
+    # Create the final dispatched app
+    dispatched_app = PathDispatcher(flask_app.wsgi_app, gradio_wsgi_wrapper, '/gradio')
+
+    # Set the flask app's wsgi_app to our new dispatcher
+    flask_app.wsgi_app = dispatched_app
+    
+    return flask_app
