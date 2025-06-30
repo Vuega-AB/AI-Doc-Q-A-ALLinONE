@@ -1,4 +1,5 @@
 from starlette.applications import Starlette
+from starlette.routing import Mount  # <<< THE CORRECT IMPORT
 from a2wsgi import ASGIMiddleware
 import gradio as gr
 
@@ -26,10 +27,10 @@ def create_app():
     # 4. Create the master router application
     master_app = Starlette(routes=[
         # A request to "/gradio" or "/gradio/..." will be handled by the Gradio app
-        gr.routing.Mount("/gradio", app=gradio_asgi, name="gradio_app"),
+        Mount("/gradio", app=gradio_asgi, name="gradio_app"),  # <<< THE CORRECT USAGE
         
         # Any other request will fall through and be handled by the Flask app
-        gr.routing.Mount("/", app=flask_asgi, name="flask_app"),
+        Mount("/", app=flask_asgi, name="flask_app"), # <<< THE CORRECT USAGE
     ])
     
     return master_app
