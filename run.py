@@ -1,7 +1,6 @@
-from starlette.applications import Starlette
-from starlette.routing import Mount  # <<< THE CORRECT IMPORT
-from a2wsgi import ASGIMiddleware
 import gradio as gr
+from starlette.applications import Starlette
+from a2wsgi import ASGIMiddleware
 
 # Import the FACTORY functions
 from main_flask_app import create_flask_app
@@ -9,28 +8,30 @@ from gradio_server import create_gradio_demo
 
 def create_app():
     """
-    This factory creates the final combined ASGI application using a master
-    Starlette router to host both Flask and Gradio on different paths.
+    This factory creates the final combined ASGI application.
+    It builds a base Starlette app to host Flask, then mounts Gradio onto it.
     """
-    print("--- Running Final App Factory with Master Starlette Router ---")
+    print("--- Running Final App Factory with Starlette Host ---")
     
-    # 1. Create the underlying app instances
+    # 1. Create the pure Flask (WSGI) app instance.
     flask_app = create_flask_app()
+
+    # 2. Create the Gradio UI Blocks instance.
     gradio_demo = create_gradio_demo()
     
-    # 2. Convert the Flask WSGI app into an ASGI app
-    flask_asgi = ASGIMiddleware(flask_app)
+    # 3. Create a clean Starlette application. Its ONLY job is to host our Flask app.
+    #    This correctly converts Flask to a pure ASGI application that Gradio can understand.
+    flask_host_app = Starlette()
+    flask_host_app.mount("/", ASGIMiddleware(flask_app))
 
-    # 3. Create the raw ASGI app from the Gradio Blocks
-    gradio_asgi = gr.routes.App.create_app(gradio_demo)
-
-    # 4. Create the master router application
-    master_app = Starlette(routes=[
-        # A request to "/gradio" or "/gradio/..." will be handled by the Gradio app
-        Mount("/gradio", app=gradio_asgi, name="gradio_app"),  # <<< THE CORRECT USAGE
-        
-        # Any other request will fall through and be handled by the Flask app
-        Mount("/", app=flask_asgi, name="flask_app"), # <<< THE CORRECT USAGE
-    ])
+    # 4. Now, use Gradio's official mounting function.
+    #    We give it our `flask_host_app` as the base. Gradio knows how to handle
+    #    a pure Starlette app perfectly. It will add its "/gradio" route
+    #    to the routes from the flask_host_app.
+    final_combined_app = gr.mount_gradio_app(
+        app=flask_host_app,
+        blocks=gradio_demo,
+        path="/gradio"
+    )
     
-    return master_app
+    return final_combined_app
