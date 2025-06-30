@@ -713,12 +713,7 @@ def app_frame():
     user_full_name = session.get("user_full_name", user.get("email").split('@')[0]) # Get full name for display
 
     # Pass user_full_name and user_role to the template if your iframe page uses them
-    return render_template(
-        "gradio_iframe.html",
-        user_role=user_role,
-        user_full_name=user_full_name, # Optional: if your template uses it
-        gradio_app_url=GRADIO_APP_URL
-    )
+    return redirect("/gradio")
 
 if __name__ == "__main__":
     print(f"Launching Flask server for authentication and iframe on 0.0.0.0:5000...")
