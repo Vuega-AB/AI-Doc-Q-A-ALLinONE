@@ -1,13 +1,22 @@
-import os
 import gradio as gr
 
-# Import the Flask app instance from your frontend file
+# Import the app instances from your other files
 from main_flask_app import app as flask_app
-# Import the Gradio Blocks instance from your server file
 from gradio_server import demo as gradio_app
 
-# The magic line: Mount the Gradio app onto a path within the Flask app.
-# Any request to your public URL at "/gradio" will now be handled by the Gradio app.
-app = gr.mount_gradio_app(flask_app, gradio_app, path="/gradio")
+def create_app():
+    """
+    This is our application factory. Gunicorn will call this function
+    to get the final, combined application object.
+    """
+    print("--- Running App Factory: Mounting Gradio onto Flask ---")
+    
+    # Mount the Gradio app onto a path within the Flask app.
+    # This returns a new, combined application object.
+    combined_app = gr.mount_gradio_app(flask_app, gradio_app, path="/gradio")
+    
+    # Return the final app that Gunicorn will serve.
+    return combined_app
 
-# The gunicorn server will run this 'app' object.
+# Gunicorn will be pointed to create_app() instead of a global 'app' variable.
+# We don't need a global 'app' variable here anymore.
