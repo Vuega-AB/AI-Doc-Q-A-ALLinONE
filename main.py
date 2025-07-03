@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from starlette.middleware.wsgi import WSGIMiddleware
 
 # Import your app creation functions
-from main_flask import create_flask_app
+from main_flask_app import create_flask_app
 from gradio_server import create_gradio_demo
 
 # Create the main FastAPI app that will act as the router
