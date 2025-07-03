@@ -11,7 +11,7 @@ app = FastAPI()
 
 # Create instances of your Flask and Gradio apps
 flask_app = create_flask_app()
-gradio_app = create_gradio_demo()
+gradio_app = create_gradio_demo(root_path="/gradio")
 
 # Mount the Gradio app at the "/gradio" path. 
 # All requests to your-url.onrender.com/gradio/* will be handled by Gradio.
@@ -23,8 +23,8 @@ app.mount("/gradio", gradio_app)
 app.mount("/", WSGIMiddleware(flask_app))
 
 # This part is optional but useful for local testing without run_all.py
-if __name__ == "__main__":
-    import uvicorn
-    # Use the port from the environment variable PORT, which Render sets
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+# if __name__ == "__main__":
+#     import uvicorn
+#     # Use the port from the environment variable PORT, which Render sets
+#     port = int(os.environ.get("PORT", 8000))
+#     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
