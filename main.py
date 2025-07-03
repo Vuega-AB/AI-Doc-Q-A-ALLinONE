@@ -1,30 +1,32 @@
+# In main.py
+
 import os
+import gradio as gr  # <<< IMPORTANT: Import gradio
 from fastapi import FastAPI
 from starlette.middleware.wsgi import WSGIMiddleware
 
 # Import your app creation functions
 from main_flask_app import create_flask_app
-from gradio_server import create_gradio_demo
+from gradio_server import create_gradio_demo  # <<< Use the new function name
 
 # Create the main FastAPI app that will act as the router
 app = FastAPI()
 
-# Create instances of your Flask and Gradio apps
+# --- NEW MOUNTING LOGIC ---
+
+# 1. Get the Gradio UI object (the gr.Blocks instance)
+gradio_interface = create_gradio_demo()
+
+# 2. Use the official Gradio function to mount the UI onto our FastAPI app.
+#    This handles all the complex pathing internally.
+#    This must be done BEFORE mounting the Flask app.
+app = gr.mount_gradio_app(
+    app=app,                  # The FastAPI app to mount onto
+    blocks=gradio_interface,  # The Gradio UI object
+    path="/gradio"            # The path to mount it at
+)
+
+# 3. Create the Flask app and mount it at the root.
+#    This should be done LAST so it handles any routes not caught by Gradio.
 flask_app = create_flask_app()
-gradio_app = create_gradio_demo(root_path="/gradio")
-
-# Mount the Gradio app at the "/gradio" path. 
-# All requests to your-url.onrender.com/gradio/* will be handled by Gradio.
-app.mount("/gradio", gradio_app)
-
-# Mount the Flask app at the root path "/".
-# This uses a WSGI-to-ASGI middleware to make Flask compatible.
-# All other requests will be handled by Flask (e.g., /login, /settings, /)
 app.mount("/", WSGIMiddleware(flask_app))
-
-# This part is optional but useful for local testing without run_all.py
-# if __name__ == "__main__":
-#     import uvicorn
-#     # Use the port from the environment variable PORT, which Render sets
-#     port = int(os.environ.get("PORT", 8000))
-#     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

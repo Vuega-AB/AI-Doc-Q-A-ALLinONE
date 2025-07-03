@@ -2,11 +2,10 @@ import os
 from dotenv import load_dotenv
 from gradio_ui import create_gradio_app
 
-def create_gradio_demo(root_path: str = ""):
+def create_gradio_demo():
     print("--- Creating Gradio Demo Instance ---")
     load_dotenv()
     demo = create_gradio_app()
-    demo.root_path = root_path
     return demo
 
 
