@@ -1084,6 +1084,43 @@ def hard_delete_user_from_db(user_email: str) -> tuple[bool, str]:
 # ||                                                                                    ||
 # ======================================================================================
 
+def create_admin_user_if_not_exists(email, plain_password, role="admin"):
+    db = get_auth_db()
+    if db is None:
+        print("Error: MongoDB for auth not available. Cannot create/update admin user.")
+        return False
+    users_collection = db[ADMIN_USERS_COLLECTION_NAME]
+    
+    user = users_collection.find_one({"email": email})
+    current_dt = datetime.now(timezone.utc) # MODIFIED: Use datetime
+
+    if user:
+        print(f"User {email} already exists.")
+        if user.get("status") != STATUS_ACTIVE or user.get("role") != "admin":
+            users_collection.update_one(
+                {"email": email},
+                {"$set": {"status": STATUS_ACTIVE, "role": "admin", "updated_at": current_dt}} # MODIFIED
+            )
+            print(f"Updated user {email} to ensure admin role and active status.")
+        return True
+    
+    hashed_pass = hash_password(plain_password)
+    try:
+        users_collection.insert_one({
+            "email": email,
+            "password": hashed_pass,
+            "role": role,
+            "status": STATUS_ACTIVE, # Admins are active by default
+            "created_at": current_dt, # MODIFIED
+            "updated_at": current_dt, # MODIFIED
+            "full_name": email.split('@')[0] # Added for consistency
+        })
+        print(f"Admin user {email} created successfully with active status.")
+        return True
+    except Exception as e:
+        print(f"Error creating admin user {email}: {e}")
+        return False
+
 def initialize_all_components(default_db="MongoDB"):
     """Initializes all backend components in the correct order."""
     global gemini_model_genai, together_client, openai_client, embedding_model, faiss_index, BACKEND_INITIAL_LOAD_MSG, mongo_client_instance, mongo_db_obj
@@ -1092,6 +1129,8 @@ def initialize_all_components(default_db="MongoDB"):
     
     print("Step 1: Initializing Database Client...")
     initialize_mongodb_client()
+
+    create_admin_user_if_not_exists("saragaballa2002@gmail.com", "11112002")
     
     print("Step 2: Verifying Configurations...")
     if mongo_db_obj is not None:
