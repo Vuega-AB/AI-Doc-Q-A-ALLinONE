@@ -1,39 +1,37 @@
-# This file is ONLY for the standalone Gradio service.
+# In run_gradio.py
 import gradio as gr
-from fastapi import FastAPI
+from fastapi import FastAPI, Request # <--- Make sure Request is imported
 from fastapi.middleware.cors import CORSMiddleware
 import os
-
-# Import the function that creates your Gradio UI
+from backend import initialize_all_components
 from gradio_ui import create_gradio_app
 
-# Get the URL of your main Flask app from environment variables
-# This is crucial for the CORS configuration below.
-FLASK_BASE_URL = os.getenv("FLASK_BASE_URL", "http://localhost:5000")
+initialize_all_components()
 
-# 1. Create the main FastAPI app for the Gradio service
+FLASK_APP_URL = os.getenv("FLASK_APP_URL", "http://localhost:5000")
 app = FastAPI()
 
-# 2. Add CORS middleware. This is CRITICAL.
-# It allows your Flask app's domain to load the Gradio iframe.
-# Without this, you will get a "refused to connect" error from the browser.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FLASK_BASE_URL],  # The domain of your Flask app
+    allow_origins=[FLASK_APP_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 3. Create the Gradio UI object
 gradio_ui = create_gradio_app()
 
-# 4. Mount the Gradio UI onto the FastAPI app.
-#    This is the modern and correct way to run Gradio with custom server settings.
 app = gr.mount_gradio_app(
     app=app,
     blocks=gradio_ui,
-    path="/"  # Mount it at the root, so it's accessible at the service's main URL
+    path="/",
+    root_path_in_global_scope=False # <--- CRITICAL
 )
 
-print(f"Gradio service starting. Allowing connections from: {FLASK_BASE_URL}")
+@app.middleware("http")
+async def set_root_path(request: Request, call_next): # <--- CRITICAL
+    host = request.headers.get("x-forwarded-host", request.headers.get("host"))
+    proto = request.headers.get("x-forwarded-proto", "http")
+    request.scope["root_path"] = f"{proto}://{host}"
+    response = await call_next(request)
+    return response
