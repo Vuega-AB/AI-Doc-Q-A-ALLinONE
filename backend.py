@@ -1130,7 +1130,7 @@ def initialize_all_components(default_db="MongoDB"):
     print("Step 1: Initializing Database Client...")
     initialize_mongodb_client()
 
-    create_admin_user_if_not_exists("saragaballa2002@gmail.com", "11112002")
+    create_admin_user_if_not_exists("developer@vuega.se", "Vuega-Dev-P@ss!2024")
     
     print("Step 2: Verifying Configurations...")
     if mongo_db_obj is not None:

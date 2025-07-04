@@ -35,7 +35,7 @@ mail = Mail()
 ts = None # This will be created inside the factory with the app's secret key.
 
 ### Define constants and helper functions globally so they are accessible everywhere.
-APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "saragaballa2002@gmail.com")
+APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "developer@vuega.se")
 MAX_EMAIL_RETRIES = 3
 EMAIL_RETRY_DELAY_SECONDS = 5
 
@@ -52,8 +52,7 @@ def create_flask_app():
 
     load_dotenv()
 
-    APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "saragaballa2002@gmail.com")
-    APP_ADMIN_PASSWORD = os.getenv("APP_ADMIN_PASSWORD", "11112002")
+    APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "developer@vuega.se")
     # GRADIO_APP_URL = os.getenv("GRADIO_APP_URL", "http://localhost:7860")
 
     GRADIO_APP_URL = os.getenv("GRADIO_APP_URL")
