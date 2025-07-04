@@ -704,7 +704,13 @@ def create_flask_app():
         user_full_name = session.get("user_full_name", user.get("email").split('@')[0]) # Get full name for display
 
         # Pass user_full_name and user_role to the template if your iframe page uses them
-        return redirect("/gradio")
+        return render_template(
+            "gradio_iframe.html",
+            user_role=user_role,
+            user_full_name=user_full_name,
+            # Use a relative path instead of the full URL
+            gradio_app_url="/gradio" 
+        )
     
     # IMPORTANT: The initialization call now happens here
     with app.app_context():
