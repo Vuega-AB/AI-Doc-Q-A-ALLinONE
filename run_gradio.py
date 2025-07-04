@@ -1,16 +1,22 @@
 # In run_gradio.py
 import gradio as gr
-from fastapi import FastAPI, Request # <--- Make sure Request is imported
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+
 from backend import initialize_all_components
 from gradio_ui import create_gradio_app
 
+# Initialize backend components
 initialize_all_components()
 
-FLASK_BASE_URL = os.getenv("FLASK_BASE_URL", "http://localhost:5000")
+# Get the URLs from environment variables
+FLASK_BASE_URL = os.getenv("FLASK_BASE_URL")
+GRADIO_SERVICE_URL = os.getenv("GRADIO_APP_URL") # This should be 'https://intellaw-gradio-app.onrender.com'
+
 app = FastAPI()
 
+# Add CORS middleware to allow the Flask app to connect
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FLASK_BASE_URL],
@@ -21,17 +27,10 @@ app.add_middleware(
 
 gradio_ui = create_gradio_app()
 
+# Mount the Gradio UI using the older 'root_path' argument
 app = gr.mount_gradio_app(
     app=app,
     blocks=gradio_ui,
     path="/",
-    root_path_in_global_scope=False # <--- CRITICAL
+    root_path=GRADIO_SERVICE_URL  # <-- Use the older, more compatible argument
 )
-
-@app.middleware("http")
-async def set_root_path(request: Request, call_next): # <--- CRITICAL
-    host = request.headers.get("x-forwarded-host", request.headers.get("host"))
-    proto = request.headers.get("x-forwarded-proto", "http")
-    request.scope["root_path"] = f"{proto}://{host}"
-    response = await call_next(request)
-    return response
