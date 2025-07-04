@@ -709,7 +709,7 @@ def create_flask_app():
             user_role=user_role,
             user_full_name=user_full_name,
             # Use a relative path instead of the full URL
-            gradio_app_url="/gradio" 
+            gradio_app_url=GRADIO_APP_URL
         )
     
     # IMPORTANT: The initialization call now happens here
