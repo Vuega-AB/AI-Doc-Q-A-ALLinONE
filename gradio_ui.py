@@ -27,7 +27,7 @@ from backend import (
     backend_update_scraper_source_in_db,
     backend_remove_scraper_source_from_db,
 )
-load_dotenv() 
+load_dotenv()
 # FLASK_BASE_URL = os.getenv("FLASK_BASE_URL", "http://localhost:5000")
 FLASK_BASE_URL = os.getenv("FLASK_BASE_URL")
 

@@ -4,10 +4,17 @@ import os
 import gradio as gr  # <<< IMPORTANT: Import gradio
 from fastapi import FastAPI
 from starlette.middleware.wsgi import WSGIMiddleware
+from dotenv import load_dotenv
+from gradio_ui import create_gradio_app
 
+def create_gradio_demo():
+    print("--- Creating Gradio Demo Instance ---")
+    load_dotenv()
+    demo = create_gradio_app()
+    return demo
 # Import your app creation functions
 from main_flask_app import create_flask_app
-from gradio_server import create_gradio_demo  # <<< Use the new function name
+# from gradio_server import create_gradio_demo  # <<< Use the new function name
 
 # Create the main FastAPI app that will act as the router
 app = FastAPI()
