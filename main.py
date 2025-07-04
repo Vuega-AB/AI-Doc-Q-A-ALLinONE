@@ -17,6 +17,7 @@ app = FastAPI()
 # 1. Get the Gradio UI object (the gr.Blocks instance)
 gradio_interface = create_gradio_demo()
 
+flask_app = create_flask_app()
 # 2. Use the official Gradio function to mount the UI onto our FastAPI app.
 #    This handles all the complex pathing internally.
 #    This must be done BEFORE mounting the Flask app.
@@ -28,5 +29,5 @@ app = gr.mount_gradio_app(
 
 # 3. Create the Flask app and mount it at the root.
 #    This should be done LAST so it handles any routes not caught by Gradio.
-flask_app = create_flask_app()
+
 app.mount("/", WSGIMiddleware(flask_app))
