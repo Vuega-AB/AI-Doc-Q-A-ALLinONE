@@ -8,12 +8,12 @@ from gradio_ui import create_gradio_app
 
 initialize_all_components()
 
-FLASK_APP_URL = os.getenv("FLASK_APP_URL", "http://localhost:5000")
+FLASK_BASE_URL = os.getenv("FLASK_BASE_URL", "http://localhost:5000")
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FLASK_APP_URL],
+    allow_origins=[FLASK_BASE_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
