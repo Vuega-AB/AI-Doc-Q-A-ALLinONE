@@ -69,7 +69,7 @@ STATUS_SUSPENDED = "suspended"
 
 # --- AI Model Definitions ---
 AVAILABLE_MODELS_DICT = {
-    "gemini-1.5-flash-latest": {"price": "Custom", "type": "gemini", "name": "Gemini 1.5 Flash"},
+    "gemini-2.5-flash": {"price": "Custom", "type": "gemini", "name": "Gemini 2.5 Flash"},
     "openai-gpt-4o": {"price": "Custom", "type": "openai", "name": "OpenAI GPT-4o"},
     "meta-llama/Llama-3-70B-Instruct-hf": {"price": "$0.90", "type": "together", "name": "Llama3 70B Instruct (HF)"},
     "meta-llama/Llama-3-8B-Instruct-hf": {"price": "$0.20", "type": "together", "name": "Llama3 8B Instruct (HF)"},
@@ -1263,7 +1263,7 @@ def initialize_all_components(default_db="MongoDB"):
     if GOOGLE_API_KEY:
         try:
             genai.configure(api_key=GOOGLE_API_KEY)
-            gemini_model_genai = genai.GenerativeModel("gemini-1.5-flash-latest")
+            gemini_model_genai = genai.GenerativeModel("gemini-2.5-flash")
             print("  - Google Gemini client configured.")
         except Exception as e:
             print(f"  - Google Gemini client init failed: {e}")
