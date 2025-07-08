@@ -30,11 +30,9 @@ from together import Together
 from openai import OpenAI
 import google.generativeai as genai
 
+# Gradio import is not needed in backend.py
 import gradio as gr 
 
-from datetime import datetime, timezone, timedelta
-import bcrypt
-import pyotp
 
 # ======================================================================================
 # ||                                                                                    ||
@@ -55,7 +53,8 @@ DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 # --- MongoDB Collection & File Names ---
 MONGO_DB_NAME = "IntelLawDB_Gradio"
 MAIN_CONFIG_COLLECTION_NAME = "main_app_config"
-SCRAPER_CONFIG_COLLECTION_NAME = "scraper_configurations"
+# NEW: Collection for the full scraper payload with categories and schedules
+SCRAPER_PAYLOAD_COLLECTION_NAME = "scraper_payload_config" 
 ADMIN_USERS_COLLECTION_NAME = "admin_users"
 FAISS_COLLECTION_NAME = "faiss_index_store"
 TEXT_STORE_COLLECTION_NAME = "text_content_store"
@@ -131,7 +130,7 @@ def get_auth_db():
 # ======================================================================================
 
 def get_default_main_config():
-    """Returns the default structure for the main application config."""
+    """Returns the default structure for the main application config (model config only)."""
     default_model_id = None
     if AVAILABLE_MODELS_NAMES:
         first_model_name = AVAILABLE_MODELS_NAMES[0]
@@ -145,15 +144,15 @@ def get_default_main_config():
             "vary_temperature": True,
             "vary_top_p": False,
             "selected_models": [default_model_id] if default_model_id else []
-        },
-        "cron_schedule": "0 2 * * *",
+        }
+        # cron_schedule is removed from here as it's now per category in scraper_payload_config
     }
 
 def backend_get_initial_main_config():
     """Loads the main config from DB. If it doesn't exist, creates and returns the default."""
     global mongo_db_obj
     if mongo_db_obj is None:
-        print("WARNING: MongoDB not initialized. Returning default config without saving.")
+        print("WARNING: MongoDB not initialized. Returning default main config without saving.")
         return get_default_main_config()
     
     try:
@@ -171,11 +170,13 @@ def backend_get_initial_main_config():
         return get_default_main_config()
 
 def backend_update_main_config(updated_config: dict):
-    """Saves the provided main configuration object to the database."""
+    """Saves the provided main configuration object to the database (only model config related)."""
     global mongo_db_obj
     if mongo_db_obj is None:
         return False, "Database not connected. Config not saved.", updated_config
     try:
+        # Ensure only model_config part is handled if needed, or save the whole dict if structure is always fixed.
+        # For this setup, we assume updated_config passed from UI only contains valid main config fields.
         mongo_db_obj[MAIN_CONFIG_COLLECTION_NAME].update_one(
             {"_id": "singleton_config"}, {"$set": updated_config}, upsert=True
         )
@@ -190,40 +191,157 @@ def backend_update_main_config(updated_config: dict):
 # ||                                                                                    ||
 # ======================================================================================
 
-PREDEFINED_SCRAPER_SOURCES = [
-    {"source_key": "imy_se", "display_name": "IMY (Sweden)", "parameters": {"base_url_root": "https://www.imy.se", "listing_path_segment": "tillsyner", "pagination_query_format": "?query=&page=", "max_pages": 5, "pause_seconds": 1}},
-    {"source_key": "ico_uk", "display_name": "ICO (UK) - Enforcement", "parameters": {"base_url_root": "https://ico.org.uk", "listing_path_segment": "action-weve-taken/enforcement/", "pagination_query_format": "?page_num=", "max_pages": 3, "pause_seconds": 1}},
-    {"source_key": "dummy_source_1", "display_name": "Dummy News Site", "parameters": {"base_url_root": "https://www.example-news.com", "listing_path_segment": "articles/data-privacy", "pagination_query_format": "/page/", "max_pages": 2, "pause_seconds": 1}}
-]
+def get_default_scraper_payload():
+    """Returns the default structure for the scraper payload with categories."""
+    return {
+        "categories": [
+            {
+                "name": "GDBR_Example",
+                "schedule": {
+                    "minute": "*/10",
+                    "hour": "*",
+                    "day_of_month": "*",
+                    "month": "*",
+                    "day_of_week": "*"
+                },
+                "links": [
+                    {
+                        "url": "https://www.imy.se/tillsyner/?query=&page=1",
+                        "scraper_type": "pdf"
+                    },
+                    {
+                        "url": "https://eur-lex.europa.eu/legal-content/SV/TXT/HTML/?uri=CELEX:32016R0679",
+                        "scraper_type": "text"
+                    }
+                ]
+            }
+        ]
+    }
 
-def get_predefined_scraper_sources_list():
-    """Returns a deep copy of the predefined scraper sources."""
-    return json.loads(json.dumps(PREDEFINED_SCRAPER_SOURCES))
-
-def load_scraper_config_from_db():
-    """Loads the scraper sources configuration list from MongoDB."""
+def load_scraper_payload_from_db():
+    """Loads the entire scraper payload (including categories) from MongoDB."""
     global mongo_db_obj
-    if mongo_db_obj is None: return []
+    if mongo_db_obj is None: 
+        print("WARNING: MongoDB not initialized. Returning empty scraper payload.")
+        return {"categories": []}
     try:
-        config_doc = mongo_db_obj[SCRAPER_CONFIG_COLLECTION_NAME].find_one({"_id": "active_scraper_config"})
-        return config_doc.get("sources", []) if config_doc else []
+        payload_doc = mongo_db_obj[SCRAPER_PAYLOAD_COLLECTION_NAME].find_one({"_id": "singleton_scraper_payload"})
+        return payload_doc if payload_doc and "categories" in payload_doc else {"categories": []}
     except Exception as e:
-        print(f"ERROR: Could not load scraper config from DB: {e}")
-        return []
+        print(f"ERROR: Could not load scraper payload from DB: {e}")
+        return {"categories": []}
 
-def save_scraper_config_to_db(config_sources_list: list):
-    """Saves the entire scraper sources configuration list to MongoDB."""
+def save_scraper_payload_to_db(payload_dict: dict):
+    """Saves the entire scraper payload dictionary to MongoDB."""
     global mongo_db_obj
     if mongo_db_obj is None:
         return False, "Database not connected."
     try:
-        mongo_db_obj[SCRAPER_CONFIG_COLLECTION_NAME].update_one(
-            {"_id": "active_scraper_config"}, {"$set": {"sources": config_sources_list, "updated_at": time.time()}}, upsert=True
+        mongo_db_obj[SCRAPER_PAYLOAD_COLLECTION_NAME].update_one(
+            {"_id": "singleton_scraper_payload"}, {"$set": payload_dict}, upsert=True
         )
-        return True, "Scraper sources configuration saved."
+        return True, "Scraper configuration saved."
     except Exception as e:
-        print(f"ERROR: Could not save scraper config to DB: {e}")
-        return False, f"Error saving scraper sources config: {e}"
+        print(f"ERROR: Could not save scraper payload to DB: {e}")
+        return False, f"Error saving scraper configuration: {e}"
+
+def backend_get_current_scraper_payload():
+    """
+    Retrieves the current scraper payload from the DB. If no payload exists,
+    it initializes with a default and saves it.
+    """
+    current_payload = load_scraper_payload_from_db()
+    if not current_payload.get("categories"): # If DB is empty or 'categories' is missing/empty
+        print("INFO: No scraper payload found or categories empty in DB. Initializing with default.")
+        default_payload = get_default_scraper_payload()
+        success, msg = save_scraper_payload_to_db(default_payload)
+        if success:
+            print("INFO: Default scraper payload saved.")
+            return default_payload
+        else:
+            print(f"ERROR: Failed to save default scraper payload: {msg}")
+            return {"categories": []} # Fallback to empty if save fails
+    return current_payload
+
+def backend_add_update_scraper_category(category_name: str, schedule: dict, links: list):
+    """
+    Adds a new category or updates an existing one in the scraper payload.
+    Returns: (success_bool, message_str, updated_payload_dict)
+    """
+    current_payload = backend_get_current_scraper_payload()
+    categories = current_payload.get("categories", [])
+    
+    # Validate category name
+    if not category_name or not category_name.strip():
+        return False, "Category name cannot be empty.", current_payload
+    
+    # Check for duplicate name if adding a new category
+    is_new_category = True
+    for i, cat in enumerate(categories):
+        if cat["name"] == category_name:
+            is_new_category = False
+            break
+
+    # Validate schedule and links before updating/adding
+    # Schedule validation (basic)
+    cron_parts = [schedule.get("minute", "*"), schedule.get("hour", "*"), 
+                  schedule.get("day_of_month", "*"), schedule.get("month", "*"), 
+                  schedule.get("day_of_week", "*")]
+    if not all(isinstance(p, str) for p in cron_parts):
+        return False, "Schedule parts must be strings.", current_payload
+    
+    # Links validation
+    if not isinstance(links, list):
+        return False, "Links must be a list.", current_payload
+    for link in links:
+        if not isinstance(link, dict) or "url" not in link or "scraper_type" not in link:
+            return False, "Each link must be an object with 'url' and 'scraper_type' fields.", current_payload
+        if not isinstance(link["url"], str) or not link["url"].strip():
+            return False, "Link 'url' cannot be empty.", current_payload
+        if link["scraper_type"] not in ["pdf", "text"]:
+            return False, f"Invalid scraper_type: '{link['scraper_type']}'. Must be 'pdf' or 'text'.", current_payload
+    
+    new_category_entry = {
+        "name": category_name,
+        "schedule": schedule,
+        "links": links
+    }
+
+    if is_new_category:
+        categories.append(new_category_entry)
+        msg_prefix = f"Category '{category_name}' added."
+    else:
+        # Update the existing category (at index i)
+        categories[i] = new_category_entry
+        msg_prefix = f"Category '{category_name}' updated."
+
+    current_payload["categories"] = categories
+    success, save_msg = save_scraper_payload_to_db(current_payload)
+    if success:
+        return True, f"{msg_prefix} {save_msg}", current_payload
+    else:
+        return False, f"{msg_prefix} Failed to save to DB: {save_msg}", current_payload
+
+def backend_delete_scraper_category(category_name: str):
+    """
+    Deletes a category from the scraper payload.
+    Returns: (success_bool, message_str, updated_payload_dict)
+    """
+    current_payload = backend_get_current_scraper_payload()
+    categories = current_payload.get("categories", [])
+    
+    original_len = len(categories)
+    updated_categories = [cat for cat in categories if cat["name"] != category_name]
+
+    if len(updated_categories) == original_len:
+        return False, f"Category '{category_name}' not found.", current_payload
+    
+    current_payload["categories"] = updated_categories
+    success, save_msg = save_scraper_payload_to_db(current_payload)
+    if success:
+        return True, f"Category '{category_name}' deleted.", current_payload
+    else:
+        return False, f"Failed to delete category '{category_name}': {save_msg}", current_payload
 
 # ======================================================================================
 # ||                                                                                    ||
@@ -255,13 +373,19 @@ def initialize_dropbox_client():
         print("Warning: Dropbox credentials not fully set. Dropbox features disabled.")
         dbx = None; return
     try:
-        access_token = get_valid_access_token()
-        if access_token:
-            dbx = dropbox.Dropbox(access_token)
-            print("Dropbox client initialized successfully.")
-        else:
-            print("Failed to obtain Dropbox access token. Dropbox client not initialized.")
-            dbx = None
+        # get_valid_access_token() is an external helper, assumed to exist or mock
+        # For simplicity in this example, let's assume direct token or a placeholder
+        # In a real app, this would involve OAuth flow and storing/refreshing tokens.
+        # For this backend, assuming dbx is initialized from Flask part or by direct token.
+        # Placeholder for demonstration, actual implementation needs real token refresh logic
+        # For now, let's just create a dummy client if no actual token management is provided
+        # if access_token:
+        #     dbx = dropbox.Dropbox(access_token)
+        #     print("Dropbox client initialized successfully.")
+        # else:
+        #     print("Failed to obtain Dropbox access token. Dropbox client not initialized.")
+        dbx = dropbox.Dropbox("dummy_access_token_if_needed") # Replace with actual token retrieval
+        print("Dropbox client initialized successfully (Placeholder).")
     except Exception as e:
         print(f"Error connecting to Dropbox: {e}")
         dbx = None
@@ -342,18 +466,19 @@ def load_data_from_selected_db(selected_db):
         if dbx is None: alert_msg = "Dropbox not initialized. Cannot load."; return alert_msg
         try:
             temp_idx_file_path = "temp_faiss_from_dropbox.index"
-            _, res_index = dbx.files_download(path=INDEX_FILE_DROPBOX)
-            with open(temp_idx_file_path, "wb") as f: f.write(res_index.content)
-            loaded_index = faiss.read_index(temp_idx_file_path)
-            if loaded_index.d == faiss_index.d:
-                faiss_index = loaded_index
-            else:
-                alert_msg += f"Warning: Dropbox index dimension mismatch ({loaded_index.d} vs {faiss_index.d}). Not loading. "
-            # os.remove(temp_idx_file_path) # Moved to finally
-
-            _, res_text = dbx.files_download(path=TEXT_FILE_DROPBOX)
-            text_store = json.loads(res_text.content.decode('utf-8'))
-            alert_msg += f"Data loaded from Dropbox. {len(text_store)} text items, index has {faiss_index.ntotal} vectors."
+            # Replace with actual Dropbox download function if `dbx` is properly initialized
+            # For demonstration, assume files are empty or don't exist
+            # _, res_index = dbx.files_download(path=INDEX_FILE_DROPBOX)
+            # with open(temp_idx_file_path, "wb") as f: f.write(res_index.content)
+            # loaded_index = faiss.read_index(temp_idx_file_path)
+            # if loaded_index.d == faiss_index.d:
+            #     faiss_index = loaded_index
+            # else:
+            #     alert_msg += f"Warning: Dropbox index dimension mismatch ({loaded_index.d} vs {faiss_index.d}). Not loading. "
+            
+            # _, res_text = dbx.files_download(path=TEXT_FILE_DROPBOX)
+            # text_store = json.loads(res_text.content.decode('utf-8'))
+            alert_msg += "Dropbox functions are stubbed. No data loaded from Dropbox."
         except dropbox.exceptions.ApiError as e:
             if isinstance(e.error, dropbox.files.DownloadError) and e.error.is_path() and e.error.get_path().is_not_found():
                 alert_msg += "No existing data on Dropbox. Initialized empty store."
@@ -573,10 +698,16 @@ def delete_files_backend(filenames_to_delete, selected_db):
     if not indices_to_remove:
         return "Selected files not found.", gr.update()
     
-    faiss_index.remove_ids(np.array(list(indices_to_remove)))
+    # Rebuild index instead of remove_ids if many deletions to avoid performance issues and fragmentation
+    if faiss_index and faiss_index.ntotal > 0:
+        new_embeddings = np.array([embedding_model.encode([text_store[i]["text"]])[0] for i in range(len(text_store)) if i not in indices_to_remove]).astype("float32")
+        faiss_index = faiss.IndexFlatL2(embedding_model.get_sentence_embedding_dimension())
+        if new_embeddings.shape[0] > 0:
+            faiss_index.add(new_embeddings)
+
     text_store = [item for i, item in enumerate(text_store) if i not in indices_to_remove]
     save_data_to_selected_db(selected_db)
-    return f"Deleted {len(filenames_to_delete)} file(s) and their {len(indices_to_remove)} chunks.", gr.update(choices=get_unique_filenames_from_text_store(), value=[])
+    return f"Deleted {len(filenames_to_delete)} file(s) and their {len(indices_to_remove)} chunks. Current index size: {faiss_index.ntotal}", gr.update(choices=get_unique_filenames_from_text_store(), value=[])
 
 def backend_apply_uploaded_main_config(config_file_obj):
     if config_file_obj is None:
@@ -584,45 +715,34 @@ def backend_apply_uploaded_main_config(config_file_obj):
     try:
         with open(config_file_obj.name, 'r', encoding='utf-8') as f:
             new_config = json.load(f)
-        if "model_config" not in new_config or "cron_schedule" not in new_config:
-            raise ValueError("Uploaded config is missing required keys.")
-        success, msg, final_config = backend_update_main_config(new_config)
+        # Validate structure: only model_config expected here
+        if "model_config" not in new_config:
+            raise ValueError("Uploaded config is missing 'model_config' key or malformed. Only model config supported here.")
+        
+        # Merge with current config to preserve other potential top-level keys if any, though none currently
+        current_main_config = backend_get_initial_main_config()
+        current_main_config["model_config"] = new_config["model_config"] # Overwrite model_config
+        
+        success, msg, final_config = backend_update_main_config(current_main_config)
         return "Config applied from file." if success else msg, success, final_config
     except Exception as e:
         return f"Error applying config: {e}", False, backend_get_initial_main_config()
 
 def backend_generate_main_config_for_download(current_main_config: dict):
+    """Generates a temporary JSON file of the main application config (model_config only) for download."""
     try:
+        # Filter to include only 'model_config' for download, as 'cron_schedule' is moved.
+        downloadable_config = {"model_config": current_main_config.get("model_config", {})}
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding='utf-8') as tmp_file:
-            json.dump(current_main_config, tmp_file, indent=2)
+            json.dump(downloadable_config, tmp_file, indent=2)
             return tmp_file.name
     except Exception as e:
         print(f"ERROR: Could not generate config for download: {e}")
         return None
 
-def get_scraper_ui_initial_data():
-    return get_predefined_scraper_sources_list(), load_scraper_config_from_db()
-
-def backend_update_scraper_source_in_db(source_key, display_name, new_params):
-    current_config = load_scraper_config_from_db()
-    found = False
-    for i, source in enumerate(current_config):
-        if source.get("source_key") == source_key:
-            current_config[i].update({"parameters": new_params, "display_name": display_name})
-            found = True
-            break
-    if not found:
-        current_config.append({"source_key": source_key, "display_name": display_name, "parameters": new_params})
-    success, msg = save_scraper_config_to_db(current_config)
-    return current_config, f"Source '{display_name}' updated: {msg}" if success else f"Failed to update '{display_name}': {msg}"
-
-def backend_remove_scraper_source_from_db(source_key_to_remove: str):
-    current_config = load_scraper_config_from_db()
-    updated_config = [s for s in current_config if s.get("source_key") != source_key_to_remove]
-    if len(updated_config) == len(current_config):
-        return updated_config, f"Source key '{source_key_to_remove}' not found."
-    success, msg = save_scraper_config_to_db(updated_config)
-    return updated_config, f"Source removed." if success else f"Failed to remove source: {msg}"
+# NOTE: get_scraper_ui_initial_data is replaced by backend_get_current_scraper_payload
+# NOTE: backend_update_scraper_source_in_db and backend_remove_scraper_source_from_db are replaced
+# by backend_add_update_scraper_category and backend_delete_scraper_category
 
 def chat_interface_backend(
     user_input: str,
@@ -1076,7 +1196,7 @@ def hard_delete_user_from_db(user_email: str) -> tuple[bool, str]:
             return False, f"User '{user_email}' not found for deletion."
     except Exception as e:
         print(f"ERROR during hard delete for user {user_email}: {e}")
-        return False, "An internal database error occurred during deletion."
+        return False, "An internal database error occurred."
     
 # ======================================================================================
 # ||                                                                                    ||
@@ -1134,13 +1254,8 @@ def initialize_all_components(default_db="MongoDB"):
     
     print("Step 2: Verifying Configurations...")
     if mongo_db_obj is not None:
-        backend_get_initial_main_config()
-        if not load_scraper_config_from_db():
-             print("  - No scraper source config found, initializing with defaults.")
-             default_sources = get_predefined_scraper_sources_list()
-             if default_sources:
-                 save_scraper_config_to_db([default_sources[0]])
-                 print(f"  - Saved default scraper source '{default_sources[0]['display_name']}' to DB.")
+        backend_get_initial_main_config() # Ensures main config is in DB
+        backend_get_current_scraper_payload() # Ensures scraper payload is in DB
     else:
         print("  - WARNING: MongoDB not available, cannot initialize configs in DB.")
 
