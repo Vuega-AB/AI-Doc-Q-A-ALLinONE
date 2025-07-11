@@ -619,7 +619,7 @@ def process_and_add_pdf_core(pdf_bytes, file_name, selected_db):
     if not chunks:
         return f"Could not break '{file_name}' into processable chunks.", False
 
-    embeddings = embedding_model.encode(chunks)
+    embeddings = embedding_model.encode(chunks, normalize_embeddings=True)
     embeddings_np = np.array(embeddings).astype("float32")
     if embeddings_np.shape[0] > 0: faiss_index.add(embeddings_np)
     
@@ -631,7 +631,7 @@ def retrieve_context_from_db(query, top_k=5):
     if embedding_model is None or faiss_index is None or faiss_index.ntotal == 0:
         return "No documents are available for context retrieval."
     try:
-        query_embedding = embedding_model.encode([query])
+        query_embedding = embedding_model.encode([query], normalize_embeddings=True)
         _, indices = faiss_index.search(np.array(query_embedding).astype("float32"), top_k)
         retrieved_texts = [text_store[i]["text"] for i in indices[0] if 0 <= i < len(text_store)]
         return "\n\n".join(retrieved_texts) if retrieved_texts else "No relevant context found."
@@ -1289,9 +1289,9 @@ def initialize_all_components(default_db="MongoDB"):
         print("  - OpenAI client: SKIPPED (API key not found).")
 
     print("Step 4: Initializing Local RAG Components...")
-    print("  - Loading SentenceTransformer model 'all-MiniLM-L6-v2'. This may take a moment...")
+    print("  - Loading SentenceTransformer model 'intfloat/multilingual-e5-base'. This may take a moment...")
     try:
-        embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        embedding_model = SentenceTransformer("intfloat/multilingual-e5-base")
         print(f"  - SentenceTransformer model loaded (Dimension: {embedding_model.get_sentence_embedding_dimension()}).")
         faiss_index = faiss.IndexFlatL2(embedding_model.get_sentence_embedding_dimension())
         print("  - FAISS index shell initialized.")
