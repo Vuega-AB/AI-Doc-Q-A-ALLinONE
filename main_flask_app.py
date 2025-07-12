@@ -27,12 +27,14 @@ from backend import (
     # confirm_user_email_in_db, # <<< ADDED
     STATUS_PENDING_EMAIL_CONFIRMATION,
     STATUS_ACTIVE,
-    STATUS_SUSPENDED
+    STATUS_SUSPENDED,
+    set_new_password 
 
 )
 
 mail = Mail()
 ts = None # This will be created inside the factory with the app's secret key.
+ts_password_reset = None
 
 ### Define constants and helper functions globally so they are accessible everywhere.
 APP_ADMIN_EMAIL = os.getenv("APP_ADMIN_EMAIL", "developer@vuega.se")
@@ -77,10 +79,69 @@ def create_flask_app():
 
     mail.init_app(app)
     # itsdangerous Serializer for tokens. Uses app.secret_key.
-    global ts
+    global ts, ts_password_reset
     ts = URLSafeTimedSerializer(app.secret_key)
+    ts_password_reset = URLSafeTimedSerializer(app.secret_key)
 
     # main_flask_app.py
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password_request():
+        if request.method == "POST":
+            email = request.form.get("email", "").strip().lower()
+            user = get_user_by_email(email)
+
+            # IMPORTANT: For security, we don't reveal if the user exists.
+            # We always show a generic success message to prevent email enumeration.
+            if user:
+                # User exists, generate a token and send the email.
+                token = ts_password_reset.dumps(email, salt='password-reset-salt')
+                reset_url = url_for('reset_password_with_token', token=token, _external=True)
+                
+                send_system_email(
+                    to_email=email,
+                    subject="Your IntelLaw Password Reset Link",
+                    template_name_no_ext="reset_password_email",
+                    reset_url=reset_url
+                )
+            
+            flash("If an account with that email exists, a password reset link has been sent.", "info")
+            return redirect(url_for("login"))
+
+        return render_template("forgot_password_request.html")
+
+
+    @app.route("/reset-password/<token>", methods=["GET", "POST"])
+    def reset_password_with_token(token):
+        try:
+            # Check the token's validity. Expires after 1 hour (3600 seconds).
+            email = ts_password_reset.loads(token, salt='password-reset-salt', max_age=3600)
+        except (SignatureExpired, BadTimeSignature):
+            flash("The password reset link is invalid or has expired.", "error")
+            return redirect(url_for("login"))
+
+        if request.method == "POST":
+            password = request.form.get("password")
+            confirm_password = request.form.get("confirm_password")
+
+            if not password or len(password) < 6:
+                flash("Password must be at least 6 characters long.", "error")
+                return render_template("reset_password_form.html", token=token)
+
+            if password != confirm_password:
+                flash("Passwords do not match.", "error")
+                return render_template("reset_password_form.html", token=token)
+
+            # If all checks pass, update the password in the backend
+            success, message = set_new_password(email, password)
+
+            if success:
+                flash("Your password has been reset successfully. Please log in.", "success")
+                return redirect(url_for("login"))
+            else:
+                flash(f"An error occurred: {message}", "error")
+
+        # For a GET request, just show the form
+        return render_template("reset_password_form.html", token=token)
 
     def require_login(f):
         @wraps(f)

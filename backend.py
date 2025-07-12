@@ -122,6 +122,43 @@ def get_auth_db():
             auth_mongo_db_obj = mongo_client_instance[MONGO_DB_NAME] 
     return auth_mongo_db_obj
 
+def set_new_password(email: str, new_plain_password: str) -> tuple[bool, str]:
+    """
+    Finds a user by email and updates their password.
+    Hashes the new password before storing.
+    """
+    db = get_auth_db()
+    if db is None:
+        return False, "Database not connected."
+
+    users_collection = db[ADMIN_USERS_COLLECTION_NAME]
+    email_lower = email.lower()
+    
+    # Check if user exists
+    user = users_collection.find_one({"email": email_lower})
+    if not user:
+        return False, "User not found."
+
+    try:
+        new_hashed_password = hash_password(new_plain_password)
+        result = users_collection.update_one(
+            {"email": email_lower},
+            {"$set": {
+                "password": new_hashed_password,
+                "updated_at": datetime.now(timezone.utc)
+            }}
+        )
+        if result.modified_count > 0:
+            print(f"Password updated successfully for {email_lower}")
+            return True, "Password updated successfully."
+        else:
+            # This might happen if the new password hashes to the same as the old one
+            print(f"Password for {email_lower} was not modified (already the same?).")
+            return True, "Password updated."
+
+    except Exception as e:
+        print(f"ERROR setting new password for {email_lower}: {e}")
+        return False, "An internal error occurred while updating the password."
 
 # ======================================================================================
 # ||                                                                                    ||
